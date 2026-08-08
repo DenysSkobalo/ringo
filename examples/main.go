@@ -4,8 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"playground-golang/logger"
 	"sync"
+
+	"github.com/DenysSkobalo/ringo/logger"
 )
 
 var (
@@ -21,19 +22,21 @@ func NewChannelBuf[T any](size int) (chan T, error) {
 }
 
 // TrySet Non-blocking send
+//
 //go:noinline
 func TrySet[T any](ch chan<- T, val T) error {
 	select {
 	case ch <- val:
 		return nil
-	default: 
+	default:
 		return ErrBufferFull
 	}
 }
 
 // TryGet Non-blocking receive
+//
 //go:noinline
-func TryGet[T any](ch <- chan T) (T, bool) {
+func TryGet[T any](ch <-chan T) (T, bool) {
 	var zero T
 	select {
 	case val, open := <-ch:
@@ -62,7 +65,7 @@ func main() {
 	var mu sync.Mutex
 	var droppedCount int
 
-	for i:=1; i < totalProducers; i++ {
+	for i := 1; i < totalProducers; i++ {
 		wg.Add(1)
 		go func(val int) {
 			defer wg.Done()

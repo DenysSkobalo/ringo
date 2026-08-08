@@ -3,7 +3,7 @@
 # ==============================================================================
 BINARY_NAME := playground
 BUILD_DIR   := build
-CMD_PATH    := ./main.go
+CMD_PATH    := ./examples/main.go
 
 # Go Build Flags & Toolchain Variables
 GO          := go
