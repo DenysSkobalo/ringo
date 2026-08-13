@@ -73,10 +73,10 @@ When capacity $N$ is constrained to a power of two ($N = 2^k$), its mask $M = N 
 ### Practical Example: Writing item #13 (tail = 13) into capacity N = 8:
 
 * **Modulo Division (Slow):**
-  $$13 \pmod 8 = 5$$
+  `13 % 8 = 5` (або $13 \pmod 8 = 5$)
 
 * **Bitwise AND with Mask M = 7 (Ultra-fast):**
-  $$13 \ \& \ 7 = 5$$
+  `13 & 7 = 5`
 
 ```text
   13 : 0000 1101 (binary representation)
