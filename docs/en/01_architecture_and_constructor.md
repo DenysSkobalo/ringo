@@ -70,19 +70,19 @@ Why does the bitwise operation `index & mask` yield the exact array index for an
 ### Answer:
 When capacity $N$ is constrained to a power of two ($N = 2^k$), its mask $M = N - 1$ consists entirely of $k$ lower set bits ($1\text{s}$). Performing a bitwise AND with mask $M$ strips all higher bits ($\ge 2^k$) from the target number, leaving only the lower $k$ bits. Mathematically, this is strictly equivalent to modulo division $X \pmod{2^k}$, but executes in 1 CPU clock cycle (AND instruction) compared to 10–30 CPU clock cycles required for integer division (DIV instruction).
 
-### Practical Example: Writing item #13 (tail = 13) into capacity $N = 8$:
+### Practical Example: Writing item #13 (tail = 13) into capacity N = 8:
 
 * **Modulo Division (Slow):**
   $$13 \pmod 8 = 5$$
 
-* **Bitwise AND with Mask $M = 7$ (Ultra-fast):**
+* **Bitwise AND with Mask M = 7 (Ultra-fast):**
   $$13 \ \& \ 7 = 5$$
 
-  $$\begin{array}{rcc}
-  13 & : & 0000\ 1101_2 \\
-  7 & : & 0000\ 0111_2 \\
-  \hline
-  13 \ \& \ 7 & : & 0000\ 0101_2 = 5
-  \end{array}$$
+```text
+  13 : 0000 1101 (binary representation)
+&  7 : 0000 0111 (mask capacity - 1)
+----------------
+   5 : 0000 0101 (result: array index)
+```
 
 The operation maps $13 \to 5$ instantly at the hardware instruction level.
