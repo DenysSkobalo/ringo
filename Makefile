@@ -1,11 +1,16 @@
 # ==============================================================================
 # Project Configuration & Variables
 # ==============================================================================
-BINARY_NAME := playground
+BINARY_NAME := ringbuffer
 BUILD_DIR   := build
+PPROF_DIR   := $(BUILD_DIR)/pprof
 CMD_PATH    := ./examples/main.go
 
-# Go Build Flags & Toolchain Variables
+# Performance & Benchmarking Parameters
+BENCH_TIME  := 3s
+PPROF_PORT  := 8080
+
+# Go Toolchain Flags
 GO          := go
 GOFLAGS     := -v
 LDFLAGS     := -s -w
@@ -17,13 +22,13 @@ YELLOW      := \033[0;33m
 RED         := \033[0;31m
 RESET       := \033[0m
 
-.PHONY: all help dev run build test bench profile race-check fmt lint vet clean check-deps
+.PHONY: all help dev run build test bench profile pprof-cpu pprof-mem escape fmt vet clean check-deps
 
 all: help
 
 ## help: Display all available workspace targets
 help:
-	@echo "$(CYAN)Local Go Playground Environment$(RESET)"
+	@echo "$(CYAN)Lock-Free RingBuffer Development Environment$(RESET)"
 	@echo ""
 	@echo "$(GREEN)Targets:$(RESET)"
 	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' | sed -e 's/^/ /'
@@ -54,21 +59,45 @@ build: check-deps
 
 ## test: Run unit tests with race detection (-race)
 test: check-deps
-	@echo "$(CYAN)[INFO] Running tests with Data Race Detector...$(RESET)"
+	@echo "$(CYAN)[INFO] Running unit tests with Data Race Detector...$(RESET)"
 	@$(GO) test -v -race -count=1 ./...
 
 ## bench: Execute performance benchmarks with zero-allocation tracking
 bench: check-deps
-	@echo "$(CYAN)[INFO] Running benchmarks (-benchmem -bench .)...$(RESET)"
-	@$(GO) test -v -bench=. -benchmem -run=^$$ ./...
+	@echo "$(CYAN)[INFO] Running benchmarks (benchtime=$(BENCH_TIME))...$(RESET)"
+	@$(GO) test -v -bench=. -benchmem -benchtime=$(BENCH_TIME) -run=^$$ ./...
 
-## profile: Generate pprof CPU and Memory profiles for performance analysis
+## profile: Generate CPU and Memory pprof profile dumps from benchmarks
 profile: check-deps
-	@echo "$(CYAN)[INFO] Generating pprof memory and CPU profiles...$(RESET)"
-	@mkdir -p $(BUILD_DIR)/pprof
-	@$(GO) test -v -bench=. -benchmem -cpuprofile=$(BUILD_DIR)/pprof/cpu.pprof -memprofile=$(BUILD_DIR)/pprof/mem.pprof -run=^$$ ./...
-	@echo "$(GREEN)[SUCCESS] Profiles generated in $(BUILD_DIR)/pprof/$(RESET)"
-	@echo "$(YELLOW)[HINT] Analyze CPU profile: go tool pprof -http=:8080 $(BUILD_DIR)/pprof/cpu.pprof$(RESET)"
+	@echo "$(CYAN)[INFO] Generating CPU and Memory profiles in $(PPROF_DIR)...$(RESET)"
+	@mkdir -p $(PPROF_DIR)
+	@$(GO) test -v -bench=. -benchmem -benchtime=$(BENCH_TIME) \
+		-cpuprofile=$(PPROF_DIR)/cpu.pprof \
+		-memprofile=$(PPROF_DIR)/mem.pprof \
+		-run=^$$ ./buffer
+	@echo "$(GREEN)[SUCCESS] Profiles stored in $(PPROF_DIR)/$(RESET)"
+	@echo "$(YELLOW)[HINT] Run 'make pprof-cpu' or 'make pprof-mem' to open web UI.$(RESET)"
+
+## pprof-cpu: Launch interactive pprof Web UI for CPU profile
+pprof-cpu: check-deps
+	@if [ ! -f $(PPROF_DIR)/cpu.pprof ]; then \
+		echo "$(RED)[ERROR] CPU profile not found. Run 'make profile' first.$(RESET)"; exit 1; \
+	fi
+	@echo "$(CYAN)[INFO] Launching pprof Web Server on http://localhost:$(PPROF_PORT)...$(RESET)"
+	@$(GO) tool pprof -http=:$(PPROF_PORT) $(PPROF_DIR)/cpu.pprof
+
+## pprof-mem: Launch interactive pprof Web UI for Memory profile
+pprof-mem: check-deps
+	@if [ ! -f $(PPROF_DIR)/mem.pprof ]; then \
+		echo "$(RED)[ERROR] Memory profile not found. Run 'make profile' first.$(RESET)" ; exit 1; \
+	fi
+	@echo "$(CYAN)[INFO] Launching pprof Web Server on http://localhost:$(PPROF_PORT)...$(RESET)"
+	@$(GO) tool pprof -http=:$(PPROF_PORT) $(PPROF_DIR)/mem.pprof
+
+## escape: Inspect compiler decisions (Escape Analysis & Bounds Check Elimination)
+escape: check-deps
+	@echo "$(CYAN)[INFO] Running gc compiler escape analysis & BCE checks...$(RESET)"
+	@$(GO) build -gcflags="-m -m -l" ./buffer/...
 
 ## fmt: Auto-format source code according to gofmt and goimports standards
 fmt: check-deps

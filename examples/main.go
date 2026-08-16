@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/DenysSkobalo/ringo/buffer"
+	"unsafe"
 )
 
 func main() {
@@ -19,5 +20,8 @@ func main() {
 
 	fmt.Println("SPSC:", spscringbuf)
 	fmt.Println("MPMC:", mpmcringbuf)
+
+	fmt.Printf("Slot size: %d bytes\n", unsafe.Sizeof(buffer.SlotPadded[int]{}))
+	fmt.Printf("Total array size: %d KB\n", (uint64(unsafe.Sizeof(buffer.SlotPadded[int]{})) * cap) / 1024)
 }
 

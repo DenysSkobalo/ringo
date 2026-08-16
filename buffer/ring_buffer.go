@@ -44,7 +44,7 @@ type SlotPadded[T any] struct {
 	// sequence serves as an atomic state barrier coordinating lock-free MPMC operations.
 	sequence atomic.Uint64
 	// val holds the underlying payload data.
-	val T
+	val T //nolint:unused
 	// _ guarantees that SlotPadded size strictly exceeds the L1 Data Cache line size.
 	_ cpu.CacheLinePad
 }
@@ -61,16 +61,16 @@ type SlotPadded[T any] struct {
 //     elimination of interconnect bus locking under high contention.
 type MPMCRingBuffer[T any] struct {
 	// Cache Line 1: Consumer State (Consumer Hot Path)
-	head atomic.Uint64
+	head atomic.Uint64 //nolint:unused
 	_    cpu.CacheLinePad
 
 	// Cache Line 2: Producer State (Producer Hot Path)
-	tail atomic.Uint64
+	tail atomic.Uint64 //nolint:unused
 	_    cpu.CacheLinePad
 
 	// Cache Line 3: Read-Only Configuration & Flags
 	mask  uint64
-	state atomic.Uint32
+	state atomic.Uint32 //nolint:unused
 	_     cpu.CacheLinePad
 
 	// Buffer Storage Array (Array of isolated cache-aligned slots)
@@ -102,7 +102,7 @@ type SPSCRingBuffer[T any] struct {
 
 	// Cache Line 3: Read-Only Configuration
 	mask  uint64
-	state atomic.Uint32
+	state atomic.Uint32 //nolint:unused
 	_     cpu.CacheLinePad
 
 	// Cache Line 4: Dense Memory Array (Dense Data Vector)
@@ -164,4 +164,38 @@ func NewMPMCRingBuffer[T any](capacity uint64) (*MPMCRingBuffer[T], error) {
 		mask:  capacity - 1,
 		slots: slots,
 	}, nil
+}
+
+
+func (b *SPSCRingBuffer[T]) TryPush(item T) error {
+	tail := b.tail.Load()
+
+	if tail-b.headCache >= (b.mask+1) {
+		b.headCache = b.head.Load()
+		if tail-b.headCache >= (b.mask+1) {
+			return ErrBufferFull
+		}
+	}
+
+	b.ring[tail&b.mask] = item
+	b.tail.Store(tail+1)
+	return nil
+}
+
+func (b *SPSCRingBuffer[T]) TryPop() (T, error) {
+	var zero T
+	head := b.head.Load()
+
+	if head == b.tailCache {
+		b.tailCache = b.tail.Load()
+		if head == b.tailCache {
+			return zero, ErrBufferEmpty
+		}
+	}
+
+	index := head & b.mask
+	item := b.ring[index]
+	b.ring[index] = zero
+	b.head.Store(head+1)
+	return item, nil
 }
