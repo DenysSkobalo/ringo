@@ -55,6 +55,12 @@ type SlotPadded[T any] struct {
 // USAGE:
 // Use MPMCRingBuffer when multiple goroutines concurrently invoke Push and/or Pop operations.
 //
+// GENERICS & PERFORMANCE WARNING:
+// When defining the generic type [T], strictly consider the memory footprint of your payload:
+//   - "Small" Structs (Primitives, structs < 64 bytes): Pass by value (e.g., [int], [MySmallStruct]).
+//   - "Large" Structs (Heavy data payloads): Pass by pointer (e.g., [*MyLargeMessage]) to avoid
+//     excessive memory copying on the hot path and to keep the SlotPadded cache-line size optimal.
+//
 // MEMORY FOOTPRINT & TRADE-OFFS:
 //   - Memory Alignment: Head, tail, mask, and slots fields are aligned on distinct cache lines.
 //   - Trade-off: Higher memory footprint (each slot occupies >=64B/128B) traded for the total
@@ -166,22 +172,25 @@ func NewMPMCRingBuffer[T any](capacity uint64) (*MPMCRingBuffer[T], error) {
 	}, nil
 }
 
-
+// TryPush attempts to enqueue an item into the lock-free SPSC ring buffer.
+// It returns ErrBufferFull if the buffer is at maximum capacity.
 func (b *SPSCRingBuffer[T]) TryPush(item T) error {
 	tail := b.tail.Load()
 
-	if tail-b.headCache >= (b.mask+1) {
+	if tail-b.headCache >= (b.mask + 1) {
 		b.headCache = b.head.Load()
-		if tail-b.headCache >= (b.mask+1) {
+		if tail-b.headCache >= (b.mask + 1) {
 			return ErrBufferFull
 		}
 	}
 
 	b.ring[tail&b.mask] = item
-	b.tail.Store(tail+1)
+	b.tail.Store(tail + 1)
 	return nil
 }
 
+// TryPop attempts to dequeue an item from the lock-free SPSC ring buffer.
+// It returns ErrBufferEmpty if the buffer currently contains no items.
 func (b *SPSCRingBuffer[T]) TryPop() (T, error) {
 	var zero T
 	head := b.head.Load()
@@ -195,7 +204,70 @@ func (b *SPSCRingBuffer[T]) TryPop() (T, error) {
 
 	index := head & b.mask
 	item := b.ring[index]
-	b.ring[index] = zero
-	b.head.Store(head+1)
+	b.ring[index] = zero // GC retention prevention
+	b.head.Store(head + 1)
+	return item, nil
+}
+
+// TryPush attempts to concurrently enqueue an item into the lock-free MPMC ring buffer.
+// It returns ErrBufferFull if the buffer is at maximum capacity.
+//
+// Performance note: If T is a large struct, pass it by pointer (*T) to minimize 
+// memory copying and optimize L1 cache utilization.
+func (b *MPMCRingBuffer[T]) TryPush(item T) error {
+	var slot *SlotPadded[T]
+	idx := b.tail.Load()
+
+	for {
+		slot = &b.slots[idx&b.mask]
+		seq := slot.sequence.Load()
+		diff := int64(seq) - int64(idx)
+		if diff == 0 {
+			if b.tail.CompareAndSwap(idx, idx+1) {
+				break
+			}
+		} else if diff < 0 {
+			return ErrBufferFull
+		} else {
+			// Another producer beat us to it, reload tail and try again
+			idx = b.tail.Load()
+		}
+	}
+
+	slot.val = item
+	slot.sequence.Store(idx + 1)
+	return nil
+}
+
+// TryPop attempts to concurrently dequeue an item from the lock-free MPMC ring buffer.
+// It returns ErrBufferEmpty if the buffer currently contains no items.
+//
+// This method automatically zeros out the underlying slot payload after reading
+// to prevent Garbage Collection retention leaks when T is a pointer type.
+func (b *MPMCRingBuffer[T]) TryPop() (T, error) {
+	var zero T
+	var slot *SlotPadded[T]
+	idx := b.head.Load()
+
+	for {
+		slot = &b.slots[idx&b.mask]
+		seq := slot.sequence.Load()
+		diff := int64(seq) - int64(idx+1)
+		if diff == 0 {
+			if b.head.CompareAndSwap(idx, idx+1) {
+				break
+			}
+		} else if diff < 0 {
+			return zero, ErrBufferEmpty
+		} else {
+			// Another consumer beat us to it, reload head and try again
+			idx = b.head.Load()
+		}
+	}
+
+	item := slot.val
+	slot.val = zero // GC retention prevention
+	slot.sequence.Store(idx + b.mask + 1)
+
 	return item, nil
 }

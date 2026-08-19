@@ -18,6 +18,9 @@ playground
 coverage.txt
 cpu.pprof
 mem.pprof
+pprof-cpu-mem-svg.zip
+pprof-cpu.txt
+pprof-mem.txt
 
 # Go Toolchain & Workspaces
 # Local workspace overrides (keep main go.mod / go.sum trackable)

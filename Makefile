@@ -4,6 +4,7 @@
 BINARY_NAME := ringbuffer
 BUILD_DIR   := build
 PPROF_DIR   := $(BUILD_DIR)/pprof
+TEST_BINARY := $(BUILD_DIR)/buffer.test
 CMD_PATH    := ./examples/main.go
 
 # Performance & Benchmarking Parameters
@@ -67,15 +68,17 @@ bench: check-deps
 	@echo "$(CYAN)[INFO] Running benchmarks (benchtime=$(BENCH_TIME))...$(RESET)"
 	@$(GO) test -v -bench=. -benchmem -benchtime=$(BENCH_TIME) -run=^$$ ./...
 
-## profile: Generate CPU and Memory pprof profile dumps from benchmarks
+## profile: Generate CPU and Memory pprof profile dumps using persistent test binary
 profile: check-deps
-	@echo "$(CYAN)[INFO] Generating CPU and Memory profiles in $(PPROF_DIR)...$(RESET)"
+	@echo "$(CYAN)[INFO] Compiling persistent test binary and running benchmarks...$(RESET)"
 	@mkdir -p $(PPROF_DIR)
-	@$(GO) test -v -bench=. -benchmem -benchtime=$(BENCH_TIME) \
-		-cpuprofile=$(PPROF_DIR)/cpu.pprof \
-		-memprofile=$(PPROF_DIR)/mem.pprof \
-		-run=^$$ ./buffer
-	@echo "$(GREEN)[SUCCESS] Profiles stored in $(PPROF_DIR)/$(RESET)"
+	@$(GO) test -c ./buffer -o $(TEST_BINARY)
+	@./$(TEST_BINARY) -test.v -test.bench=. -test.benchmem \
+		-test.benchtime=$(BENCH_TIME) \
+		-test.cpuprofile=$(PPROF_DIR)/cpu.pprof \
+		-test.memprofile=$(PPROF_DIR)/mem.pprof \
+		-test.run=^$$
+	@echo "$(GREEN)[SUCCESS] Profiles and test binary stored in $(BUILD_DIR)/$(RESET)"
 	@echo "$(YELLOW)[HINT] Run 'make pprof-cpu' or 'make pprof-mem' to open web UI.$(RESET)"
 
 ## pprof-cpu: Launch interactive pprof Web UI for CPU profile
@@ -83,16 +86,22 @@ pprof-cpu: check-deps
 	@if [ ! -f $(PPROF_DIR)/cpu.pprof ]; then \
 		echo "$(RED)[ERROR] CPU profile not found. Run 'make profile' first.$(RESET)"; exit 1; \
 	fi
+	@if [ ! -f $(TEST_BINARY) ]; then \
+		echo "$(RED)[ERROR] Test binary not found ($(TEST_BINARY)). Run 'make profile' first.$(RESET)"; exit 1; \
+	fi
 	@echo "$(CYAN)[INFO] Launching pprof Web Server on http://localhost:$(PPROF_PORT)...$(RESET)"
-	@$(GO) tool pprof -http=:$(PPROF_PORT) $(PPROF_DIR)/cpu.pprof
+	@$(GO) tool pprof -http=:$(PPROF_PORT) $(TEST_BINARY) $(PPROF_DIR)/cpu.pprof
 
 ## pprof-mem: Launch interactive pprof Web UI for Memory profile
 pprof-mem: check-deps
 	@if [ ! -f $(PPROF_DIR)/mem.pprof ]; then \
 		echo "$(RED)[ERROR] Memory profile not found. Run 'make profile' first.$(RESET)" ; exit 1; \
 	fi
+	@if [ ! -f $(TEST_BINARY) ]; then \
+		echo "$(RED)[ERROR] Test binary not found ($(TEST_BINARY)). Run 'make profile' first.$(RESET)"; exit 1; \
+	fi
 	@echo "$(CYAN)[INFO] Launching pprof Web Server on http://localhost:$(PPROF_PORT)...$(RESET)"
-	@$(GO) tool pprof -http=:$(PPROF_PORT) $(PPROF_DIR)/mem.pprof
+	@$(GO) tool pprof -http=:$(PPROF_PORT) $(TEST_BINARY) $(PPROF_DIR)/mem.pprof
 
 ## escape: Inspect compiler decisions (Escape Analysis & Bounds Check Elimination)
 escape: check-deps
